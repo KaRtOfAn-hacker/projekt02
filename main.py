@@ -23,6 +23,14 @@ def evaluate_model(model, X_train, X_test, y_train, y_test, metrics):
     preds = model.predict(X_test)
     return {name: metric(y_test, preds) for name, metric in metrics.items()}
 
+def plot_country_trend(df, countries, target, ylabel, fname):
+    plt.figure(figsize=(12, 6))
+    for country in countries:
+        cd = df[df["location"] == country]
+        plt.plot(cd["date"], cd[target], label=country)
+    plt.xlabel("Date"); plt.ylabel(ylabel); plt.legend(); plt.xticks(rotation=45)
+    save_plot(f"{ylabel} Over Time", fname)
+
 df = pd.read_csv("text/covid_data.csv")
 print(df.head(), df.info(), df.isnull().sum(), df.duplicated().sum())
 
@@ -38,7 +46,6 @@ df = df.sort_values(by=["location", "date"])
 df["growth_rate_new_cases"] = df.groupby("location")["new_cases"].pct_change().fillna(0)
 df["growth_rate_new_deaths"] = df.groupby("location")["new_deaths"].pct_change().fillna(0)
 
-# Sample data for faster processing with large dataset
 df_sample = df.sample(n=min(10000, len(df)), random_state=42)
 df_sample["iso_code_encoded"] = LabelEncoder().fit_transform(df_sample["iso_code"].astype(str))
 
@@ -46,12 +53,7 @@ selected_countries = ["Ukraine", "United States", "Germany"]
 latest_data = df[df["date"] == df["date"].max()]
 
 for target, ylabel, fname in [("total_cases", "Total Cases", "total_cases_trend.png"), ("total_deaths", "Total Deaths", "total_deaths_trend.png")]:
-    plt.figure(figsize=(12, 6))
-    for country in selected_countries:
-        cd = df[df["location"] == country]
-        plt.plot(cd["date"], cd[target], label=country)
-    plt.xlabel("Date"); plt.ylabel(ylabel); plt.legend(); plt.xticks(rotation=45)
-    save_plot(f"{ylabel} Over Time", fname)
+    plot_country_trend(df, selected_countries, target, ylabel, fname)
 
 plt.figure(figsize=(10, 6))
 latest_data.groupby("continent")["total_cases"].sum().plot(kind="bar")
@@ -77,12 +79,7 @@ save_plot("Total Deaths per Million by Continent", "boxplot_continents.png")
 sns.pairplot(df_sample[["total_cases", "total_deaths", "total_vaccinations", "population"]].sample(min(1000, len(df_sample))))
 plt.suptitle("Pair Plot of Key Variables", y=1.02); plt.savefig("fotog/pairplot.png"); plt.close()
 
-plt.figure(figsize=(12, 6))
-for country in selected_countries:
-    cd = df[df["location"] == country]
-    plt.plot(cd["date"], cd["new_cases"], label=country, linestyle='--')
-plt.xlabel("Date"); plt.ylabel("New Cases"); plt.legend(); plt.xticks(rotation=45)
-save_plot("New Cases Trend (Linear)", "new_cases_trend.png")
+plot_country_trend(df, selected_countries, "new_cases", "New Cases", "new_cases_trend.png")
 
 plt.figure(figsize=(12, 6))
 top_10 = latest_data.nlargest(10, "total_cases_per_million")[["location", "total_cases_per_million"]]
@@ -97,11 +94,9 @@ for country in selected_countries:
 df_sample["high_cases"] = (df_sample["new_cases"] > 1000).astype(int)
 X = pd.concat([df_sample[["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]].copy(), pd.get_dummies(df_sample["continent"], prefix="continent")], axis=1)
 
-# Remove rows with NaN values for ML
 X = X.dropna()
 df_clean = df_sample.loc[X.index]
-y_reg = df_clean["new_cases"].values
-y_cls = df_clean["high_cases"].values
+y_reg, y_cls = df_clean["new_cases"].values, df_clean["high_cases"].values
 
 scaler = StandardScaler()
 X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(X[["total_cases", "total_deaths", "total_vaccinations"]])
@@ -110,13 +105,11 @@ X_train, X_test, y_train_reg, y_test_reg, y_train_cls, y_test_cls = train_test_s
 
 reg_models = {"Linear": LinearRegression(), "Polynomial": make_pipeline(PolynomialFeatures(degree=2), LinearRegression()), "Ridge": Ridge(alpha=1.0), "Lasso": Lasso(alpha=0.1, max_iter=5000)}
 reg_metrics = {"MSE": mean_squared_error, "RMSE": lambda y, p: np.sqrt(mean_squared_error(y, p)), "MAE": mean_absolute_error, "R2": r2_score}
-reg_results = [evaluate_model(model, X_train, X_test, y_train_reg, y_test_reg, reg_metrics) | {"Model": name} for name, model in reg_models.items()]
-print(pd.DataFrame(reg_results))
+print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_reg, y_test_reg, reg_metrics) | {"Model": n} for n, m in reg_models.items()]))
 
 cls_models = {"Logistic Regression": make_pipeline(SMOTE(random_state=42), LogisticRegression(max_iter=1000)), "Decision Tree": make_pipeline(SMOTE(random_state=42), DecisionTreeClassifier(random_state=42)), "Random Forest": make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)), "k-NN": make_pipeline(SMOTE(random_state=42), KNeighborsClassifier()), "Gradient Boosting": make_pipeline(SMOTE(random_state=42), GradientBoostingClassifier(random_state=42))}
 cls_metrics = {"Accuracy": accuracy_score, "Precision": lambda y, p: precision_score(y, p, zero_division=0), "Recall": lambda y, p: recall_score(y, p, zero_division=0), "F1-Score": lambda y, p: f1_score(y, p, zero_division=0)}
-cls_results = [evaluate_model(model, X_train, X_test, y_train_cls, y_test_cls, cls_metrics) | {"Model": name} for name, model in cls_models.items()]
-print(pd.DataFrame(cls_results))
+print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_cls, y_test_cls, cls_metrics) | {"Model": n} for n, m in cls_models.items()]))
 
 for name, model in cls_models.items():
     model.fit(X_train, y_train_cls)
@@ -148,12 +141,10 @@ if hasattr(rf_clf, 'feature_importances_'):
     print("Feature Importance:")
     for i, ix in enumerate(idx[:10]): print(f"{i+1}. {X.columns[ix]}: {rf_clf.feature_importances_[ix]:.4f}")
 
-kf = KFold(n_splits=3, shuffle=True, random_state=42)
 for name, model in cls_models.items():
-    scores = cross_val_score(model, X_train, y_train_cls, cv=kf, scoring="f1")
+    scores = cross_val_score(model, X_train, y_train_cls, cv=KFold(n_splits=3, shuffle=True, random_state=42), scoring="f1")
     print(f"{name}: Mean F1 = {scores.mean():.4f}, Std = {scores.std():.4f}")
 
-# Simplified GridSearchCV for faster processing
 grid_rf = GridSearchCV(make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)), {"randomforestclassifier__n_estimators": [50, 100], "randomforestclassifier__max_depth": [10, 20]}, cv=2, scoring="f1")
 grid_rf.fit(X_train, y_train_cls)
 print(f"Best RF Params: {grid_rf.best_params_}")
