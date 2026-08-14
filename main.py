@@ -23,7 +23,7 @@ def evaluate_model(model, X_train, X_test, y_train, y_test, metrics):
     preds = model.predict(X_test)
     return {name: metric(y_test, preds) for name, metric in metrics.items()}
 
-df = pd.read_csv("owid-covid-data.csv")
+df = pd.read_csv("text/covid_data.csv")
 print(df.head(), df.info(), df.isnull().sum(), df.duplicated().sum())
 
 df = df.drop_duplicates()
@@ -37,6 +37,10 @@ df["iso_code_encoded"] = LabelEncoder().fit_transform(df["iso_code"].astype(str)
 df = df.sort_values(by=["location", "date"])
 df["growth_rate_new_cases"] = df.groupby("location")["new_cases"].pct_change().fillna(0)
 df["growth_rate_new_deaths"] = df.groupby("location")["new_deaths"].pct_change().fillna(0)
+
+# Sample data for faster processing with large dataset
+df_sample = df.sample(n=min(10000, len(df)), random_state=42)
+df_sample["iso_code_encoded"] = LabelEncoder().fit_transform(df_sample["iso_code"].astype(str))
 
 selected_countries = ["Ukraine", "United States", "Germany"]
 latest_data = df[df["date"] == df["date"].max()]
@@ -70,7 +74,7 @@ sns.boxplot(x="continent", y="total_deaths_per_million", data=df)
 plt.xlabel("Continent"); plt.ylabel("Deaths per Million"); plt.xticks(rotation=45)
 save_plot("Total Deaths per Million by Continent", "boxplot_continents.png")
 
-sns.pairplot(df[["total_cases", "total_deaths", "total_vaccinations", "population"]].sample(min(1000, len(df))))
+sns.pairplot(df_sample[["total_cases", "total_deaths", "total_vaccinations", "population"]].sample(min(1000, len(df_sample))))
 plt.suptitle("Pair Plot of Key Variables", y=1.02); plt.savefig("fotog/pairplot.png"); plt.close()
 
 plt.figure(figsize=(12, 6))
@@ -90,13 +94,18 @@ for country in selected_countries:
     cd = df[df["location"] == country]
     print(f"{country}: Max cases {cd.loc[cd['new_cases'].idxmax(), 'date']}, Max deaths {cd.loc[cd['new_deaths'].idxmax(), 'date']}, Min cases {cd.loc[cd['new_cases'].idxmin(), 'date']}, Min deaths {cd.loc[cd['new_deaths'].idxmin(), 'date']}")
 
-df["high_cases"] = (df["new_cases"] > 1000).astype(int)
-X = pd.concat([df[["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]].copy(), pd.get_dummies(df["continent"], prefix="continent")], axis=1)
+df_sample["high_cases"] = (df_sample["new_cases"] > 1000).astype(int)
+X = pd.concat([df_sample[["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]].copy(), pd.get_dummies(df_sample["continent"], prefix="continent")], axis=1)
+
+# Remove rows with NaN values for ML
+X = X.dropna()
+df_clean = df_sample.loc[X.index]
+y_reg = df_clean["new_cases"].values
+y_cls = df_clean["high_cases"].values
 
 scaler = StandardScaler()
 X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(X[["total_cases", "total_deaths", "total_vaccinations"]])
 
-y_reg, y_cls = df["new_cases"].values, df["high_cases"].values
 X_train, X_test, y_train_reg, y_test_reg, y_train_cls, y_test_cls = train_test_split(X, y_reg, y_cls, test_size=0.2, random_state=42)
 
 reg_models = {"Linear": LinearRegression(), "Polynomial": make_pipeline(PolynomialFeatures(degree=2), LinearRegression()), "Ridge": Ridge(alpha=1.0), "Lasso": Lasso(alpha=0.1, max_iter=5000)}
@@ -139,12 +148,13 @@ if hasattr(rf_clf, 'feature_importances_'):
     print("Feature Importance:")
     for i, ix in enumerate(idx[:10]): print(f"{i+1}. {X.columns[ix]}: {rf_clf.feature_importances_[ix]:.4f}")
 
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
+kf = KFold(n_splits=3, shuffle=True, random_state=42)
 for name, model in cls_models.items():
     scores = cross_val_score(model, X_train, y_train_cls, cv=kf, scoring="f1")
     print(f"{name}: Mean F1 = {scores.mean():.4f}, Std = {scores.std():.4f}")
 
-grid_rf = GridSearchCV(make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)), {"smote__random_state": [42], "randomforestclassifier__n_estimators": [50, 100, 200], "randomforestclassifier__max_depth": [5, 10, 20, None], "randomforestclassifier__min_samples_split": [2, 5, 10]}, cv=3, scoring="f1")
+# Simplified GridSearchCV for faster processing
+grid_rf = GridSearchCV(make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)), {"randomforestclassifier__n_estimators": [50, 100], "randomforestclassifier__max_depth": [10, 20]}, cv=2, scoring="f1")
 grid_rf.fit(X_train, y_train_cls)
 print(f"Best RF Params: {grid_rf.best_params_}")
 print(f"RF F1 Score after optimization: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test), zero_division=0):.4f}")
@@ -173,7 +183,7 @@ X_train_kbest, X_test_kbest = skb.fit_transform(X_train, y_train_cls), skb.trans
 grid_rf.best_estimator_.fit(X_train_kbest, y_train_cls)
 print(f"Classification F1-Score on top {k} features: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test_kbest), zero_division=0):.4f}")
 
-df.to_csv("covid_data_cleaned.csv", index=False)
-print("Cleaned data saved to covid_data_cleaned.csv")
+df_clean.to_csv("text/covid_data_cleaned.csv", index=False)
+print("Cleaned data saved to text/covid_data_cleaned.csv")
 print("All visualizations saved to fotog/ directory")
-print("Analysis reports saved to analysis_reports.txt")
+print("Analysis reports saved to text/analysis_reports.txt")
