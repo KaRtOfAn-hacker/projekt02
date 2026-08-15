@@ -5,7 +5,7 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-df = pd.read_csv('owid-covid-data.csv')
+df = pd.read_csv('text/covid_data.csv')
 
 for c in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases_per_million", "total_deaths_per_million"]:
     if c in df.columns:
@@ -14,7 +14,10 @@ for c in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases
 df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
 df = df.drop_duplicates()
 
-print(df[["new_cases", "new_deaths", "total_cases", "total_deaths", "population", "gdp_per_capita"]].describe())
+# Sample data for faster processing
+df_sample = df.sample(n=min(10000, len(df)), random_state=42)
+
+print(df_sample[["new_cases", "new_deaths", "total_cases", "total_deaths", "population", "gdp_per_capita"]].describe())
 
 cnt = ["Ukraine", "United States", "Germany"]
 fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -33,8 +36,8 @@ df[df["date"] == df["date"].max()].groupby("continent")["total_cases"].sum().plo
 axes[1, 0].set_title('Випадки за континентами')
 axes[1, 0].tick_params(axis='x', rotation=45)
 
-axes[1, 1].hist(df["total_cases"], bins=30, alpha=0.7, label='Випадки', color='blue')
-axes[1, 1].hist(df["total_deaths"], bins=30, alpha=0.7, label='Смерті', color='red')
+axes[1, 1].hist(df_sample["total_cases"], bins=30, alpha=0.7, label='Випадки', color='blue')
+axes[1, 1].hist(df_sample["total_deaths"], bins=30, alpha=0.7, label='Смерті', color='red')
 axes[1, 1].set_title('Розподіл')
 axes[1, 1].legend()
 

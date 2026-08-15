@@ -14,11 +14,19 @@ from sklearn.pipeline import make_pipeline
 
 warnings.filterwarnings('ignore')
 
-df = pd.read_csv('covid_data_cleaned.csv')
+df = pd.read_csv('text/covid_data_cleaned.csv')
+
+# Sample data for faster processing
+df_sample = df.sample(n=min(10000, len(df)), random_state=42)
+
 fc = ["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]
-fc.extend([c for c in df.columns if c.startswith('continent_')])
-X = df[fc].copy()
-y_cls, y_reg = df['high_cases'], df['new_cases']
+fc.extend([c for c in df_sample.columns if c.startswith('continent_')])
+X = df_sample[fc].copy()
+
+# Remove NaN values
+X = X.dropna()
+df_sample_clean = df_sample.loc[X.index]
+y_cls, y_reg = df_sample_clean['high_cases'], df_sample_clean['new_cases']
 
 scaler = StandardScaler()
 X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(X[["total_cases", "total_deaths", "total_vaccinations"]])
