@@ -15,7 +15,6 @@ for c in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases
 df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
 df = df.drop_duplicates()
 
-# Sample data for faster processing
 df_sample = df.sample(n=min(10000, len(df)), random_state=42)
 df_sample['high_cases'] = (df_sample['new_cases'] > 1000).astype(int)
 df_encoded = pd.get_dummies(df_sample, columns=['continent'], prefix='continent', dtype=int)

@@ -14,7 +14,6 @@ for c in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases
 df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
 df = df.drop_duplicates()
 
-# Sample data for faster processing
 df_sample = df.sample(n=min(10000, len(df)), random_state=42)
 
 print(df_sample[["new_cases", "new_deaths", "total_cases", "total_deaths", "population", "gdp_per_capita"]].describe())

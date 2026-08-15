@@ -41,7 +41,6 @@ def plot_country_trend(df, countries, target, ylabel, fname):
     save_plot(f"{ylabel} Over Time", fname)
 
 
-# Load and clean data
 df = pd.read_csv("text/covid_data.csv")
 print(df.head(), df.info(), df.isnull().sum(), df.duplicated().sum())
 
@@ -53,20 +52,17 @@ df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
 
 print(df[["new_cases", "new_deaths", "total_cases", "total_deaths", "population", "gdp_per_capita"]].describe())
 
-# Feature engineering
 df["iso_code_encoded"] = LabelEncoder().fit_transform(df["iso_code"].astype(str))
 df = df.sort_values(by=["location", "date"])
 df["growth_rate_new_cases"] = df.groupby("location")["new_cases"].pct_change().fillna(0)
 df["growth_rate_new_deaths"] = df.groupby("location")["new_deaths"].pct_change().fillna(0)
 
-# Sample data for ML
 df_sample = df.sample(n=min(10000, len(df)), random_state=42)
 df_sample["iso_code_encoded"] = LabelEncoder().fit_transform(df_sample["iso_code"].astype(str))
 
 selected_countries = ["Ukraine", "United States", "Germany"]
 latest_data = df[df["date"] == df["date"].max()]
 
-# Visualizations
 for target, ylabel, fname in [("total_cases", "Total Cases", "total_cases_trend.png"), ("total_deaths", "Total Deaths", "total_deaths_trend.png")]:
     plot_country_trend(df, selected_countries, target, ylabel, fname)
 
@@ -115,7 +111,6 @@ for country in selected_countries:
     cd = df[df["location"] == country]
     print(f"{country}: Max cases {cd.loc[cd['new_cases'].idxmax(), 'date']}, Max deaths {cd.loc[cd['new_deaths'].idxmax(), 'date']}, Min cases {cd.loc[cd['new_cases'].idxmin(), 'date']}, Min deaths {cd.loc[cd['new_deaths'].idxmin(), 'date']}")
 
-# ML preparation
 df_sample["high_cases"] = (df_sample["new_cases"] > 1000).astype(int)
 X = pd.concat([df_sample[["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]].copy(), pd.get_dummies(df_sample["continent"], prefix="continent")], axis=1)
 
@@ -128,7 +123,6 @@ X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(
 
 X_train, X_test, y_train_reg, y_test_reg, y_train_cls, y_test_cls = train_test_split(X, y_reg, y_cls, test_size=0.2, random_state=42)
 
-# Regression models
 reg_models = {
     "Linear": LinearRegression(),
     "Polynomial": make_pipeline(PolynomialFeatures(degree=2), LinearRegression()),
@@ -143,7 +137,6 @@ reg_metrics = {
 }
 print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_reg, y_test_reg, reg_metrics) | {"Model": n} for n, m in reg_models.items()]))
 
-# Classification models
 cls_models = {
     "Logistic Regression": make_pipeline(SMOTE(random_state=42), LogisticRegression(max_iter=1000)),
     "Decision Tree": make_pipeline(SMOTE(random_state=42), DecisionTreeClassifier(random_state=42)),
@@ -159,7 +152,6 @@ cls_metrics = {
 }
 print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_cls, y_test_cls, cls_metrics) | {"Model": n} for n, m in cls_models.items()]))
 
-# Confusion matrices
 for name, model in cls_models.items():
     model.fit(X_train, y_train_cls)
     plt.figure(figsize=(6, 5))
@@ -168,7 +160,6 @@ for name, model in cls_models.items():
     plt.ylabel("Actual")
     save_plot(f"Confusion Matrix - {name}", f"confusion_matrix_{name.replace(' ', '_').lower()}.png")
 
-# ROC curves
 plt.figure(figsize=(10, 8))
 for name, model in cls_models.items():
     if name != "k-NN":
@@ -185,7 +176,6 @@ plt.legend()
 plt.savefig("fotog/roc_curves.png")
 plt.close()
 
-# Feature importance
 rf = make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)).fit(X_train, y_train_cls)
 rf_clf = rf.named_steps['randomforestclassifier']
 if hasattr(rf_clf, 'feature_importances_'):
@@ -201,12 +191,10 @@ if hasattr(rf_clf, 'feature_importances_'):
     for i, ix in enumerate(idx[:10]):
         print(f"{i+1}. {X.columns[ix]}: {rf_clf.feature_importances_[ix]:.4f}")
 
-# Cross-validation
 for name, model in cls_models.items():
     scores = cross_val_score(model, X_train, y_train_cls, cv=KFold(n_splits=3, shuffle=True, random_state=42), scoring="f1")
     print(f"{name}: Mean F1 = {scores.mean():.4f}, Std = {scores.std():.4f}")
 
-# Grid search optimization
 grid_rf = GridSearchCV(
     make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)),
     {"randomforestclassifier__n_estimators": [50, 100], "randomforestclassifier__max_depth": [10, 20]},
@@ -217,7 +205,6 @@ grid_rf.fit(X_train, y_train_cls)
 print(f"Best RF Params: {grid_rf.best_params_}")
 print(f"RF F1 Score after optimization: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test), zero_division=0):.4f}")
 
-# Regression analysis
 best_reg = LinearRegression().fit(X_train, y_train_reg)
 reg_preds = best_reg.predict(X_test)
 
@@ -238,14 +225,12 @@ errors = np.abs(y_test_reg - reg_preds)
 for i, idx in enumerate(np.argsort(errors)[-10:][::-1]):
     print(f"{i+1}. Index: {idx}, Actual: {y_test_reg[idx]:.2f}, Predicted: {reg_preds[idx]:.2f}, Error: {errors[idx]:.2f}")
 
-# Feature selection
 k = min(10, X_train.shape[1])
 skb = SelectKBest(score_func=f_classif, k=k)
 X_train_kbest, X_test_kbest = skb.fit_transform(X_train, y_train_cls), skb.transform(X_test)
 grid_rf.best_estimator_.fit(X_train_kbest, y_train_cls)
 print(f"Classification F1-Score on top {k} features: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test_kbest), zero_division=0):.4f}")
 
-# Save results
 df_clean.to_csv("text/covid_data_cleaned.csv", index=False)
 print("Cleaned data saved to text/covid_data_cleaned.csv")
 print("All visualizations saved to fotog/ directory")

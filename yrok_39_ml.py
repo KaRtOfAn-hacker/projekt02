@@ -16,14 +16,12 @@ warnings.filterwarnings('ignore')
 
 df = pd.read_csv('text/covid_data_cleaned.csv')
 
-# Sample data for faster processing
 df_sample = df.sample(n=min(10000, len(df)), random_state=42)
 
 fc = ["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]
 fc.extend([c for c in df_sample.columns if c.startswith('continent_')])
 X = df_sample[fc].copy()
 
-# Remove NaN values
 X = X.dropna()
 df_sample_clean = df_sample.loc[X.index]
 y_cls, y_reg = df_sample_clean['high_cases'], df_sample_clean['new_cases']
@@ -34,7 +32,6 @@ X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(
 Xtrc, Xtec, ytrc, ytec = train_test_split(X, y_cls, test_size=0.2, random_state=42, stratify=y_cls)
 Xtrr, Xter, ytrr, yter = train_test_split(X, y_reg, test_size=0.2, random_state=42)
 
-# Класифікація
 cls_models = {
     "LogReg": LogisticRegression(max_iter=1000, random_state=42),
     "DT": DecisionTreeClassifier(random_state=42),
@@ -60,7 +57,6 @@ plt.tight_layout()
 plt.savefig('fotog/urok_39_confusion_matrices.png', dpi=300, bbox_inches='tight')
 plt.close()
 
-# Регресія
 reg_models = {
     "Linear": LinearRegression(),
     "Poly": make_pipeline(PolynomialFeatures(degree=2), LinearRegression()),
@@ -76,7 +72,6 @@ for n, m in reg_models.items():
 
 print(pd.DataFrame(reg_res, columns=["Model", "MSE", "RMSE", "MAE", "R2"]).to_string(index=False))
 
-# Графіки регресії
 br = Ridge(alpha=10.0, random_state=42, solver='auto').fit(Xtrr, ytrr)
 pr = br.predict(Xter)
 
