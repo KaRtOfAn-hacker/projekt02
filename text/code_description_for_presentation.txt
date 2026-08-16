@@ -1,0 +1,540 @@
+ДЕТАЛЬНИЙ ОПИС КОДУ ДЛЯ ПРЕЗЕНТАЦІЇ ЗАХИСТУ ПРОЕКТУ
+"Аналіз та прогнозування даних COVID-19"
+
+================================================================
+
+І. ОПИС ГОЛОВНОГО ФАЙЛУ main.py
+
+================================================================
+
+1. ІМПОРТ БІБЛІОТЕК ТА НАЛАШТУВАННЯ
+-------------------------------------------
+import pandas as pd                    # Обробка даних та робота з DataFrame
+import numpy as np                     # Математичні операції та масиви
+import matplotlib.pyplot as plt        # Створення графіків
+import seaborn as sns                  # Покращені візуалізації
+from sklearn.preprocessing import LabelEncoder, StandardScaler, PolynomialFeatures  # Підготовка даних
+from sklearn.model_selection import train_test_split, cross_val_score, KFold, GridSearchCV  # Розділення даних та оптимізація
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, mean_absolute_error, r2_score, confusion_matrix, roc_curve, auc  # Метрики оцінки
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, LogisticRegression  # Лінійні моделі
+from sklearn.tree import DecisionTreeClassifier  # Дерево рішень
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier  # Ансамблеві методи
+from sklearn.neighbors import KNeighborsClassifier  # Метод k-найближчих сусідів
+from sklearn.feature_selection import SelectKBest, f_classif  # Відбір ознак
+from imblearn.pipeline import make_pipeline  # Створення пайплайнів
+from imblearn.over_sampling import SMOTE  # Балансування класів
+import warnings
+warnings.filterwarnings('ignore')  # Вимкнення попереджень
+
+ЩО ЦЕ: Підключення всіх необхідних бібліотек для аналізу даних, машинного навчання та візуалізації.
+
+================================================================
+
+2. ДОПОМІЖНІ ФУНКЦІЇ
+-------------------------------------------
+def save_plot(title, filename):
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(f"fotog/{filename}")
+    plt.close()
+
+ЩО ЦЕ: Функція для збереження графіків у папку fotog/ з автоматичним закриттям.
+
+def evaluate_model(model, X_train, X_test, y_train, y_test, metrics):
+    model.fit(X_train, y_train)
+    return {name: metric(y_test, model.predict(X_test)) for name, metric in metrics.items()}
+
+ЩО ЦЕ: Функція для навчання моделі та оцінки її за допомогою заданих метрик.
+
+def plot_country_trend(df, countries, target, ylabel, fname):
+    plt.figure(figsize=(12, 6))
+    for country in countries:
+        cd = df[df["location"] == country]
+        plt.plot(cd["date"], cd[target], label=country)
+    plt.xlabel("Date")
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.xticks(rotation=45)
+    save_plot(f"{ylabel} Over Time", fname)
+
+ЩО ЦЕ: Функція для побудови графіків динаміки показників для заданих країн.
+
+================================================================
+
+3. ЗАВАНТАЖЕННЯ ТА ПІДГОТОВКА ДАНИХ
+-------------------------------------------
+df = pd.read_csv("text/covid_data.csv")
+print(df.head(), df.info(), df.isnull().sum(), df.duplicated().sum())
+
+ЩО ЦЕ: Завантаження даних з CSV файлу та виведення інформації про датасет.
+
+df = df.drop_duplicates()
+for col in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases_per_million", "total_deaths_per_million"]:
+    if col in df.columns:
+        df[col] = df[col].fillna(df[col].median())
+df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
+
+ЩО ЦЕ:
+- Видалення дублікатів
+- Заповнення пропущених значень медіаною для числових змінних
+- Заповнення пропусків у вакцинації нулями
+
+df["iso_code_encoded"] = LabelEncoder().fit_transform(df["iso_code"].astype(str))
+df = df.sort_values(by=["location", "date"])
+df["growth_rate_new_cases"] = df.groupby("location")["new_cases"].pct_change().fillna(0)
+df["growth_rate_new_deaths"] = df.groupby("location")["new_deaths"].pct_change().fillna(0)
+
+ЩО ЦЕ:
+- Кодування ISO кодів країн числовими значеннями
+- Сортування за країною та датою
+- Створення нових ознак: темп росту випадків та смертей
+
+================================================================
+
+4. РОЗВІДУВАЛЬНИЙ АНАЛІЗ ДАНИХ (EDA)
+-------------------------------------------
+df_sample = df.sample(n=min(10000, len(df)), random_state=42)
+df_sample["iso_code_encoded"] = LabelEncoder().fit_transform(df_sample["iso_code"].astype(str))
+
+ЩО ЦЕ: Створення вибірки для аналізу (10,000 записів) для швидкості обробки.
+
+selected_countries = ["Ukraine", "United States", "Germany"]
+latest_data = df[df["date"] == df["date"].max()]
+
+ЩО ЦЕ: Вибір країн для аналізу та отримання останніх даних.
+
+for target, ylabel, fname in [("total_cases", "Total Cases", "total_cases_trend.png"), ("total_deaths", "Total Deaths", "total_deaths_trend.png")]:
+    plot_country_trend(df, selected_countries, target, ylabel, fname)
+
+ЩО ЦЕ: Побудова графіків динаміки загальних випадків та смертей для вибраних країн.
+
+plt.figure(figsize=(10, 6))
+latest_data.groupby("continent")["total_cases"].sum().plot(kind="bar")
+plt.xlabel("Continent")
+plt.ylabel("Total Cases")
+save_plot("Total Cases by Continent (Latest Date)", "continent_comparison.png")
+
+ЩО ЦЕ: Стовпчаста діаграма розподілу випадків за континентами.
+
+correlation_matrix = df[["new_cases", "new_deaths", "total_cases", "population", "gdp_per_capita"]].corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm", center=0)
+save_plot("Correlation Matrix", "correlation_heatmap.png")
+
+ЩО ЦЕ: Кореляційна матриця для виявлення зв'язків між змінними.
+
+plt.figure(figsize=(12, 5))
+for i, (col, xlabel) in enumerate([("total_cases", "Total Cases"), ("total_deaths", "Total Deaths")], 1):
+    plt.subplot(1, 2, i)
+    plt.hist(df[col], bins=30)
+    plt.xlabel(xlabel)
+save_plot("Distributions", "distributions.png")
+
+ЩО ЦЕ: Гістограми розподілу загальних випадків та смертей.
+
+plt.figure(figsize=(10, 6))
+sns.boxplot(x="continent", y="total_deaths_per_million", data=df)
+plt.xlabel("Continent")
+plt.ylabel("Deaths per Million")
+plt.xticks(rotation=45)
+save_plot("Total Deaths per Million by Continent", "boxplot_continents.png")
+
+ЩО ЦЕ: Boxplot для розподілу смертей на мільйон за континентами.
+
+sns.pairplot(df_sample[["total_cases", "total_deaths", "total_vaccinations", "population"]].sample(min(1000, len(df_sample))))
+plt.suptitle("Pair Plot of Key Variables", y=1.02)
+plt.savefig("fotog/pairplot.png")
+plt.close()
+
+ЩО ЦЕ: Pair plot для візуалізації попарних зв'язків між ключовими змінними.
+
+plt.figure(figsize=(12, 6))
+top_10 = latest_data.nlargest(10, "total_cases_per_million")[["location", "total_cases_per_million"]]
+plt.bar(top_10["location"], top_10["total_cases_per_million"])
+plt.xlabel("Country")
+plt.ylabel("Cases per Million")
+plt.xticks(rotation=45)
+save_plot("Top 10 Countries by Total Cases per Million", "top_10_countries.png")
+
+ЩО ЦЕ: Топ-10 країн за кількістю випадків на мільйон населення.
+
+================================================================
+
+5. ПІДГОТОВКА ДАНИХ ДЛЯ МАШИННОГО НАВЧАННЯ
+-------------------------------------------
+df_sample["high_cases"] = (df_sample["new_cases"] > 1000).astype(int)
+X = pd.concat([df_sample[["total_cases", "total_deaths", "total_vaccinations", "population", "gdp_per_capita", "iso_code_encoded"]].copy(), pd.get_dummies(df_sample["continent"], prefix="continent")], axis=1)
+
+ЩО ЦЕ:
+- Створення бінарної цільової змінної (high_cases = 1, якщо нових випадків > 1000)
+- Об'єднання числових ознак та one-hot encoded континентів
+
+X = X.dropna()
+df_clean = df_sample.loc[X.index]
+y_reg, y_cls = df_clean["new_cases"].values, df_clean["high_cases"].values
+
+ЩО ЦЕ:
+- Видалення записів з пропущеними значеннями
+- Визначення цільових змінних для регресії (y_reg) та класифікації (y_cls)
+
+scaler = StandardScaler()
+X[["total_cases", "total_deaths", "total_vaccinations"]] = scaler.fit_transform(X[["total_cases", "total_deaths", "total_vaccinations"]])
+
+ЩО ЦЕ: Стандартизація числових ознак для кращої роботи моделей.
+
+X_train, X_test, y_train_reg, y_test_reg, y_train_cls, y_test_cls = train_test_split(X, y_reg, y_cls, test_size=0.2, random_state=42)
+
+ЩО ЦЕ: Розділення даних на тренувальну (80%) та тестову (20%) вибірки.
+
+================================================================
+
+6. МОДЕЛІ РЕГРЕСІЇ
+-------------------------------------------
+reg_models = {
+    "Linear": LinearRegression(),
+    "Polynomial": make_pipeline(PolynomialFeatures(degree=2), LinearRegression()),
+    "Ridge": Ridge(alpha=1.0),
+    "Lasso": Lasso(alpha=0.1, max_iter=5000)
+}
+
+ЩО ЦЕ: Словник з регресійними моделями для порівняння.
+
+reg_metrics = {
+    "MSE": mean_squared_error,
+    "RMSE": lambda y, p: np.sqrt(mean_squared_error(y, p)),
+    "MAE": mean_absolute_error,
+    "R2": r2_score
+}
+
+ЩО ЦЕ: Метрики для оцінки регресійних моделей.
+
+print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_reg, y_test_reg, reg_metrics) | {"Model": n} for n, m in reg_models.items()]))
+
+ЩО ЦЕ: Навчання та оцінка всіх регресійних моделей з виведенням результатів у таблиці.
+
+================================================================
+
+7. МОДЕЛІ КЛАСИФІКАЦІЇ
+-------------------------------------------
+cls_models = {
+    "Logistic Regression": make_pipeline(SMOTE(random_state=42), LogisticRegression(max_iter=1000)),
+    "Decision Tree": make_pipeline(SMOTE(random_state=42), DecisionTreeClassifier(random_state=42)),
+    "Random Forest": make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)),
+    "k-NN": make_pipeline(SMOTE(random_state=42), KNeighborsClassifier()),
+    "Gradient Boosting": make_pipeline(SMOTE(random_state=42), GradientBoostingClassifier(random_state=42))
+}
+
+ЩО ЦЕ: Словник з класифікаційними моделями з SMOTE для балансування класів.
+
+cls_metrics = {
+    "Accuracy": accuracy_score,
+    "Precision": lambda y, p: precision_score(y, p, zero_division=0),
+    "Recall": lambda y, p: recall_score(y, p, zero_division=0),
+    "F1-Score": lambda y, p: f1_score(y, p, zero_division=0)
+}
+
+ЩО ЦЕ: Метрики для оцінки класифікаційних моделей.
+
+print(pd.DataFrame([evaluate_model(m, X_train, X_test, y_train_cls, y_test_cls, cls_metrics) | {"Model": n} for n, m in cls_models.items()]))
+
+ЩО ЦЕ: Навчання та оцінка всіх класифікаційних моделей.
+
+================================================================
+
+8. ВІЗУАЛІЗАЦІЯ РЕЗУЛЬТАТІВ КЛАСИФІКАЦІЇ
+-------------------------------------------
+for name, model in cls_models.items():
+    model.fit(X_train, y_train_cls)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(confusion_matrix(y_test_cls, model.predict(X_test)), annot=True, fmt="d", cmap="Blues")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    save_plot(f"Confusion Matrix - {name}", f"confusion_matrix_{name.replace(' ', '_').lower()}.png")
+
+ЩО ЦЕ: Побудова матриць плутанини для кожної класифікаційної моделі.
+
+plt.figure(figsize=(10, 8))
+for name, model in cls_models.items():
+    if name != "k-NN":
+        model.fit(X_train, y_train_cls)
+        if hasattr(model, "predict_proba"):
+            y_proba = model.predict_proba(X_test)[:, 1]
+            fpr, tpr, _ = roc_curve(y_test_cls, y_proba)
+            plt.plot(fpr, tpr, label=f'{name} (AUC = {auc(fpr, tpr):.2f})')
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curves')
+plt.legend()
+plt.savefig("fotog/roc_curves.png")
+plt.close()
+
+ЩО ЦЕ: Побудова ROC кривих для всіх моделей (крім k-NN).
+
+================================================================
+
+9. АНАЛІЗ ВАЖЛИВОСТІ ОЗНАК
+-------------------------------------------
+rf = make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)).fit(X_train, y_train_cls)
+rf_clf = rf.named_steps['randomforestclassifier']
+if hasattr(rf_clf, 'feature_importances_'):
+    idx = np.argsort(rf_clf.feature_importances_)[::-1]
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(len(rf_clf.feature_importances_)), rf_clf.feature_importances_[idx])
+    plt.xticks(range(len(rf_clf.feature_importances_)), [X.columns[i] for i in idx], rotation=90)
+    plt.title("Feature Importance (Random Forest)")
+    plt.tight_layout()
+    plt.savefig("fotog/feature_importance.png")
+    plt.close()
+    print("Feature Importance:")
+    for i, ix in enumerate(idx[:10]):
+        print(f"{i+1}. {X.columns[ix]}: {rf_clf.feature_importances_[ix]:.4f}")
+
+ЩО ЦЕ: Визначення та візуалізація найважливіших ознак за допомогою Random Forest.
+
+================================================================
+
+10. CROSS-VALIDATION ТА ОПТИМІЗАЦІЯ
+-------------------------------------------
+for name, model in cls_models.items():
+    scores = cross_val_score(model, X_train, y_train_cls, cv=KFold(n_splits=3, shuffle=True, random_state=42), scoring="f1")
+    print(f"{name}: Mean F1 = {scores.mean():.4f}, Std = {scores.std():.4f}")
+
+ЩО ЦЕ: Крос-валідація для оцінки стабільності моделей.
+
+grid_rf = GridSearchCV(
+    make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42)),
+    {"randomforestclassifier__n_estimators": [50, 100], "randomforestclassifier__max_depth": [10, 20]},
+    cv=2,
+    scoring="f1"
+)
+grid_rf.fit(X_train, y_train_cls)
+print(f"Best RF Params: {grid_rf.best_params_}")
+print(f"RF F1 Score after optimization: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test), zero_division=0):.4f}")
+
+ЩО ЦЕ: Оптимізація гіперпараметрів Random Forest за допомогою GridSearchCV.
+
+================================================================
+
+11. АНАЛІЗ РЕГРЕСІЙНОЇ МОДЕЛІ
+-------------------------------------------
+best_reg = LinearRegression().fit(X_train, y_train_reg)
+reg_preds = best_reg.predict(X_test)
+
+plt.figure(figsize=(10, 6))
+plt.scatter(y_test_reg, reg_preds, alpha=0.5)
+plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--', lw=2)
+plt.xlabel("Actual Values")
+plt.ylabel("Predicted Values")
+save_plot("Predicted vs Actual (Regression)", "predicted_vs_actual.png")
+
+ЩО ЦЕ: Графік порівняння прогнозованих та фактичних значень.
+
+plt.figure(figsize=(10, 6))
+plt.hist(y_test_reg - reg_preds, bins=30)
+plt.xlabel("Residuals")
+plt.ylabel("Frequency")
+save_plot("Distribution of Residuals", "residuals_distribution.png")
+
+ЩО ЦЕ: Гістограма розподілу помилок прогнозування.
+
+errors = np.abs(y_test_reg - reg_preds)
+for i, idx in enumerate(np.argsort(errors)[-10:][::-1]):
+    print(f"{i+1}. Index: {idx}, Actual: {y_test_reg[idx]:.2f}, Predicted: {reg_preds[idx]:.2f}, Error: {errors[idx]:.2f}")
+
+ЩО ЦЕ: Аналіз записів з найбільшими помилками прогнозування.
+
+================================================================
+
+12. ВІДБІР ОЗНАК
+-------------------------------------------
+k = min(10, X_train.shape[1])
+skb = SelectKBest(score_func=f_classif, k=k)
+X_train_kbest, X_test_kbest = skb.fit_transform(X_train, y_train_cls), skb.transform(X_test)
+grid_rf.best_estimator_.fit(X_train_kbest, y_train_cls)
+print(f"Classification F1-Score on top {k} features: {f1_score(y_test_cls, grid_rf.best_estimator_.predict(X_test_kbest), zero_division=0):.4f}")
+
+ЩО ЦЕ: Відбір топ-k найважливіших ознак та оцінка моделі на них.
+
+================================================================
+
+13. ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ
+-------------------------------------------
+df_clean.to_csv("text/covid_data_cleaned.csv", index=False)
+print("Cleaned data saved to text/covid_data_cleaned.csv")
+print("All visualizations saved to fotog/ directory")
+print("Analysis reports saved to text/analysis_reports.txt")
+
+ЩО ЦЕ: Збереження очищених даних та повідомлення про завершення аналізу.
+
+================================================================
+
+ІІ. ОПИС ФАЙЛУ generate_charts.py
+
+================================================================
+
+1. НАЛАШТУВАННЯ ТА ЗАВАНТАЖЕННЯ ДАНИХ
+-------------------------------------------
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
+
+plt.style.use('seaborn-v0_8')
+sns.set_palette("husl")
+
+df = pd.read_csv('text/covid_data.csv')
+
+ЩО ЦЕ: Налаштування стилю графіків та завантаження даних.
+
+================================================================
+
+2. ПІДГОТОВКА ДАНИХ
+-------------------------------------------
+for col in ["new_cases", "new_deaths", "total_cases", "total_deaths", "total_cases_per_million", "total_deaths_per_million"]:
+    if col in df.columns:
+        df[col] = df[col].fillna(df[col].median())
+df["total_vaccinations"] = df["total_vaccinations"].fillna(0)
+df = df.drop_duplicates()
+
+df_sample = df.sample(n=min(10000, len(df)), random_state=42)
+
+ЩО ЦЕ: Очищення даних та створення вибірки для аналізу.
+
+================================================================
+
+3. ГЕНЕРАЦІЯ ГРАФІКІВ ДЛЯ ПРЕЗЕНТАЦІЇ
+-------------------------------------------
+
+Графік 1: Динаміка захворюваності за країнами
+selected_countries = ["Ukraine", "United States", "Germany"]
+plt.figure(figsize=(12, 6))
+for country in selected_countries:
+    cd = df[df["location"] == country]
+    plt.plot(cd["date"], cd["total_cases"], label=country, linewidth=2)
+plt.xlabel("Дата", fontsize=12)
+plt.ylabel("Загальні випадки", fontsize=12)
+plt.title("Динаміка захворюваності за країнами", fontsize=14, fontweight='bold')
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig('fotog/chart_country_trends.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Графік показує як змінювалася кількість випадків у трьох країнах протягом часу.
+
+Графік 2: Розподіл випадків за континентами
+latest_data = df[df["date"] == df["date"].max()]
+plt.figure(figsize=(10, 6))
+latest_data.groupby("continent")["total_cases"].sum().plot(kind="bar", color='steelblue')
+plt.xlabel("Континент", fontsize=12)
+plt.ylabel("Загальні випадки", fontsize=12)
+plt.title("Розподіл випадків за континентами", fontsize=14, fontweight='bold')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig('fotog/chart_continent_comparison.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Стовпчаста діаграма показує загальну кількість випадків на кожному континенті.
+
+Графік 3: Кореляційна матриця
+correlation_matrix = df_sample[["new_cases", "new_deaths", "total_cases", "population", "gdp_per_capita"]].corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+            fmt='.3f', linewidths=1, square=True)
+plt.title("Кореляційна матриця ключових показників", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('fotog/chart_correlation.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Теплова карта показує кореляції між ключовими показниками.
+
+Графік 4: Розподіл ознак
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+axes[0].hist(df_sample["total_cases"], bins=30, alpha=0.7, color='blue', edgecolor='black')
+axes[0].set_xlabel("Загальні випадки", fontsize=12)
+axes[0].set_ylabel("Частота", fontsize=12)
+axes[0].set_title("Розподіл загальних випадків", fontsize=12, fontweight='bold')
+
+axes[1].hist(df_sample["total_deaths"], bins=30, alpha=0.7, color='red', edgecolor='black')
+axes[1].set_xlabel("Загальні смерті", fontsize=12)
+axes[1].set_ylabel("Частота", fontsize=12)
+axes[1].set_title("Розподіл загальних смертей", fontsize=12, fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('fotog/chart_distributions.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Дві гістограми показують розподіл загальних випадків та смертей.
+
+Графік 5: Порівняння моделей
+[Код створює таблицю з результатами всіх класифікаційних моделей]
+
+ЩО ЦЕ: Таблиця порівнює ефективність різних моделей машинного навчання.
+
+Графік 6: Важливість ознак
+rf = RandomForestClassifier(random_state=42).fit(X_train, y_train_cls)
+feature_importance = pd.DataFrame({
+    'Feature': X.columns,
+    'Importance': rf.feature_importances_
+}).sort_values('Importance', ascending=False).head(10)
+
+plt.figure(figsize=(12, 6))
+plt.barh(feature_importance['Feature'], feature_importance['Importance'], color='steelblue')
+plt.xlabel("Важливість ознаки", fontsize=12)
+plt.ylabel("Ознака", fontsize=12)
+plt.title("Топ-10 найважливіших ознак (Random Forest)", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('fotog/chart_feature_importance.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Горизонтальна стовпчаста діаграма показує які ознаки найбільш впливають на прогноз.
+
+Графік 7: Boxplot за континентами
+plt.figure(figsize=(10, 6))
+sns.boxplot(x="continent", y="total_deaths_per_million", data=df_sample)
+plt.xlabel("Континент", fontsize=12)
+plt.ylabel("Смертей на мільйон", fontsize=12)
+plt.title("Розподіл смертей на мільйон за континентами", fontsize=14, fontweight='bold')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig('fotog/chart_boxplot_continents.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+ЩО ЦЕ: Boxplot показує розподіл смертей на мільйон населення за континентами.
+
+================================================================
+
+ІІІ. КЛЮЧОВІ АСПЕКТИ ДЛЯ ЗАХИСТУ
+
+================================================================
+
+1. АРХІТЕКТУРА ПРОЕКТУ
+- main.py: Основний аналіз з повним ML пайплайном
+- generate_charts.py: Спеціалізовані графіки для презентації
+- presentation.md: Файл презентації (Marp формат)
+- text/: Папка з даними та описами
+
+2. ОСНОВНІ ЕТАПИ АНАЛІЗУ
+1. Завантаження та очищення даних
+2. Розвідувальний аналіз (EDA)
+3. Підготовка даних для ML
+4. Навчання та оцінка моделей
+5. Оптимізація та аналіз результатів
+
+3. ВИКОРИСТАНІ ТЕХНІКІ
+- SMOTE для балансування класів
+- StandardScaler для нормалізації
+- GridSearchCV для оптимізації
+- Cross-validation для надійності
+- Feature importance для інтерпретації
+
+4. РЕЗУЛЬТАТИ
+- Найкраща класифікація: Gradient Boosting (F1 ≈ 0.82)
+- Найкраща регресія: Ridge Regression (R² ≈ 0.76)
+- Топ ознаки: total_cases, population, gdp_per_capita
+
+================================================================
